@@ -1,5 +1,7 @@
 # claude-burnup
 
+**Your context burn but not like, ugly.** _Inspired by - ~~name redacted until permission given~~._
+
 A single-file burn-up status line for [Claude Code](https://code.claude.com) —
 model, context consumption, and every rate-limit window your account reports,
 each with a **projection of where it lands at reset** if your current pace
