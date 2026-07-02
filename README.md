@@ -5,15 +5,22 @@ model, context consumption, and every rate-limit window your account reports,
 each with a **projection of where it lands at reset** if your current pace
 continues.
 
-```
-Fable 5 | ctx ███░░░░░░░ 30% | 5h ██░░░░░░░░ 18% →40% ⟳ 17:33 | wk █░░░░░░░░░ 7% →13% ⟳ 3d
+![Default Colors](./default_colors.png)
+
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/relativityboy/claude-burnup/main/claude-burnup.sh \
+  -o ~/.claude/claude-burnup.sh && chmod +x ~/.claude/claude-burnup.sh
 ```
 
 No network. No credentials. It renders only the JSON Claude Code already passes
 to status line commands on stdin.
 
 ## What it shows
-
+```
+Fable 5 | ctx ███░░░░░░░ 30% | 5h ██░░░░░░░░ 18% →40% ⟳ 17:33 | wk █░░░░░░░░░ 7% →13% ⟳ 3d
+```
 | Segment | Meaning |
 |---|---|
 | `Fable 5` | current model |
@@ -27,7 +34,8 @@ of a session, before the first API response).
 
 ## Color bands
 
-![Default Colors](./default_colors.png)
+
+
 
 Every percentage — bars, numbers, and projections — is banded independently:
 
@@ -46,13 +54,6 @@ its 10%**: the band color scaled by `(10 + 9r)%` for `r` = 1–9, i.e. 19% → 9
 brightness, snapping to 100% when the block completes. Empty cells are a fixed
 neutral gray, so their visibility never depends on the band color next to them.
 You can read a bar to roughly the percent without reading the number.
-
-## Install
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/relativityboy/claude-burnup/main/claude-burnup.sh \
-  -o ~/.claude/claude-burnup.sh && chmod +x ~/.claude/claude-burnup.sh
-```
 
 Add to `~/.claude/settings.json`:
 
