@@ -3,9 +3,9 @@
 **Your context burn but not like, ugly.** _Inspired by - ~~name redacted until permission given~~._
 
 A single-file burn-up status line for [Claude Code](https://code.claude.com) —
-model, context consumption, and every rate-limit window your account reports,
-each with a **projection of where it lands at reset** if your current pace
-continues.
+directory, git branch, model, context consumption, and every rate-limit window
+your account reports, each with a **projection of where it lands at reset** if
+your current pace continues.
 
 ![Default Colors](./default_colors.png)
 
@@ -16,16 +16,19 @@ curl -fsSL https://raw.githubusercontent.com/relativityboy/claude-burnup/main/cl
   -o ~/.claude/claude-burnup.sh && chmod +x ~/.claude/claude-burnup.sh
 ```
 
-No network. No credentials. It renders only the JSON Claude Code already passes
-to status line commands on stdin.
+No network. No credentials. It renders the JSON Claude Code already passes to
+status line commands on stdin, plus one local `git` query for the branch (the
+statusline schema doesn't carry it).
 
 ## What it shows
 ```
-Fable 5 | ctx ███░░░░░░░ 30% | 5h ██░░░░░░░░ 18% →40% ⟳ 17:33 | wk █░░░░░░░░░ 7% →13% ⟳ 3d
+myproject/ | main | F5 | ctx ███░░░░░░░ 30% | 5h ██░░░░░░░░ 18% →40% ⟳ 17:33 | wk █░░░░░░░░░ 7% →13% ⟳ 3d
 ```
 | Segment | Meaning |
 |---|---|
-| `Fable 5` | current model |
+| `myproject/` | working directory (basename) |
+| `main` | git branch · a detached HEAD (rebase, bisect) shows `@shortsha` · absent outside a repo |
+| `F5` | current model, abbreviated — see below |
 | `ctx` | context window consumed (works with 200k and 1M windows — percentages come from Claude Code itself) |
 | `5h` | 5-hour session window consumed · `→N%` projected at reset · `⟳ HH:MM` reset time |
 | `wk` | weekly (all models) consumed · projection · `⟳ 3d` time until reset |
@@ -33,6 +36,25 @@ Fable 5 | ctx ███░░░░░░░ 30% | 5h ██░░░░░░�
 
 Segments show a dim `–` when their data is absent (normal for the first moments
 of a session, before the first API response).
+
+## Model abbreviations
+
+The model segment is abbreviated to the family's initial plus its version, so the
+quota segments get the width instead:
+
+| Claude Code reports | status line shows |
+|---|---|
+| `Fable 5` | `F5` |
+| `Opus 4.8` | `O4.8` |
+| `Haiku 4.5` | `H4.5` |
+| `Opus 5 (1M context)` | `O5·1M` |
+
+The 1M marker survives because `O5` and `O5·1M` are different context budgets and
+this is the only place that shows.
+
+The rule is derived, not a lookup table, so a model released after this script
+still abbreviates correctly. A name with nothing version-shaped in it is passed
+through unchanged rather than guessed at.
 
 ## Color bands
 
@@ -75,6 +97,7 @@ turns; Claude Code also re-runs the command after every message.
 ## Requirements
 
 - `jq`
+- `git` (optional — without it the branch segment just doesn't render)
 - a truecolor (24-bit ANSI) terminal — iTerm2, Ghostty, kitty, WezTerm, recent
   Terminal.app, most Linux terminals
 - Claude Code recent enough to pass `context_window` and `rate_limits` on
@@ -83,11 +106,23 @@ turns; Claude Code also re-runs the command after every message.
 
 ## Customize
 
-- **Colors:** the four `R;G;B` triplets at the top of the script.
+- **Colors:** the `R;G;B` triplets at the top of the script — four bands, plus
+  the directory gray (`DIRC`) and branch purple (`BRNC`).
 - **Bands:** the thresholds in `band_rgb()`.
 - **Debug:** run with `BURNUP_DEBUG=1` in the environment to dump the raw stdin
   JSON to `~/.claude/statusline-last.json` and see exactly what your account
   reports.
+
+## Tests
+
+```bash
+bash tests/abbrev_test.sh
+bash tests/branch_test.sh
+```
+
+Both feed fixture JSON to the script itself and check the rendered segments, so
+they exercise the same path a status line refresh does — `branch_test.sh` builds
+temp git repos (on-branch, detached, non-repo) as its working directories.
 
 ## Uninstall
 

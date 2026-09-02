@@ -2,16 +2,19 @@
 # claude-burnup — a burn-up status line for Claude Code.
 # https://github.com/relativityboy/claude-burnup
 #
-# Shows: model | context consumed | every rate-limit bucket Claude Code reports
-# (5h session, weekly, and model-scoped weeklies when present), each with a
-# projection of usage at reset if the current average rate continues.
+# Shows: directory | git branch | model | context consumed | every rate-limit
+# bucket Claude Code reports (5h session, weekly, and model-scoped weeklies when
+# present), each with a projection of usage at reset if the current average rate
+# continues.
 #
 # Bars are 10 full-block cells. Completed cells render at full band color; the
 # in-progress cell is a FULL block whose brightness encodes percent-within-block:
 # band RGB scaled by (10 + 9*r)% for r in 1..9 (19%..91%), snapping to 100% when
 # the block completes. Empty cells are a fixed neutral-gray ░ baseline.
 #
-# Reads only the JSON Claude Code passes on stdin — no network, no credentials.
+# Reads the JSON Claude Code passes on stdin, plus one local git query for the
+# branch (the statusline schema carries no current-branch field) — no network,
+# no credentials.
 # Stdin schema: https://code.claude.com/docs/en/statusline.md
 
 input=$(cat)
@@ -35,6 +38,8 @@ YEL="230;185;0"       # 60-84: amber
 RED="220;50;47"       # >=85: red
 NULC="110;114;120"    # empty-cell baseline — fixed neutral so its visibility
                       # never depends on the color of the cell to its left
+DIRC="140;144;150"    # directory segment: neutral gray, quieter than the model
+BRNC="130;90;180"     # branch segment: muted dark purple
 OVER=$'\033[1;91m'    # projections > 100%: bold bright red, distinct from band-red
 CYA=$'\033[36m'; B=$'\033[1m'; D=$'\033[2m'; X=$'\033[0m'
 SEP=" ${D}|${X} "
@@ -94,6 +99,36 @@ render_bucket() {
   line+="${SEP}${seg}"
 }
 
+# abbrev_model <display name> -> compact form: family initial + version, so
+# "Opus 4.8" -> O4.8 and "Haiku 4.5" -> H4.5. A context-window variant keeps its
+# distinction ("Opus 5 (1M context)" -> O5·1M) because O5 and O5·1M are different
+# budgets and the model segment is the only place that shows.
+#
+# NOTE(claude): derived, not table-driven — a model released after this script
+# still abbreviates correctly instead of falling back to its full name. Anything
+# without a version token (or an unrecognized shape) passes through untouched
+# rather than being mangled into something wrong-but-confident.
+abbrev_model() {
+  local name=$1 base=$1 paren ctx="" fam="" ver="" w
+  if [[ $name =~ \(([^\)]*)\)[[:space:]]*$ ]]; then
+    paren=${BASH_REMATCH[1]}
+    base=${name%%(*}
+    [[ $paren =~ ([0-9]+[MmKk]) ]] &&
+      ctx=$(printf '%s' "${BASH_REMATCH[1]}" | tr '[:lower:]' '[:upper:]')
+  fi
+  for w in $base; do
+    if   [ -z "$ver" ] && [[ $w =~ ^[0-9]+(\.[0-9]+)?$ ]]; then ver=$w
+    elif [ -z "$fam" ] && [[ $w =~ ^[A-Za-z] ]] && [ "$w" != "Claude" ]; then fam=$w
+    fi
+  done
+  if [ -n "$fam" ] && [ -n "$ver" ]; then
+    printf '%s%s%s' \
+      "$(printf '%s' "${fam:0:1}" | tr '[:lower:]' '[:upper:]')" "$ver" "${ctx:+·$ctx}"
+  else
+    printf '%s' "$name"
+  fi
+}
+
 label_for() {
   case "$1" in
     five_hour) printf '5h';;
@@ -103,6 +138,7 @@ label_for() {
 }
 
 model=$($JQ -r '.model.display_name // "?"' <<<"$input" 2>/dev/null)
+dir=$($JQ -r '.workspace.current_dir // .cwd // ""' <<<"$input" 2>/dev/null)
 ctx_used=$($JQ -r '
   .context_window as $c |
   (($c.used_percentage // (if $c.remaining_percentage != null then 100 - $c.remaining_percentage else -1 end)) | round)
@@ -124,7 +160,24 @@ scoped_lines=$($JQ -r '
   | @tsv' <<<"$input" 2>/dev/null)
 
 now=$(date +%s)
-line="${B}${CYA}${model}${X}"
+
+# --- directory + git branch ---
+# The branch comes from git, not stdin — the statusline JSON has no
+# current-branch field (worktree.branch only exists in --worktree sessions).
+# Absent segments keep one meaning each: no dir segment = no dir in the
+# payload; no branch segment = not a git repo. A detached HEAD renders as
+# @shortsha rather than silence, so a rebase/bisect doesn't look like main.
+line=""
+if [ -n "$dir" ]; then
+  line+="$(fg "$DIRC")${dir##*/}/${X}${SEP}"
+  branch=$(git -C "$dir" branch --show-current 2>/dev/null)
+  if [ -z "$branch" ]; then
+    sha=$(git -C "$dir" rev-parse --short HEAD 2>/dev/null)
+    [ -n "$sha" ] && branch="@${sha}"
+  fi
+  [ -n "$branch" ] && line+="$(fg "$BRNC")${branch}${X}${SEP}"
+fi
+line+="${B}${CYA}$(abbrev_model "$model")${X}"
 
 # --- context burn-up ---
 if [ "$ctx_used" -ge 0 ] 2>/dev/null; then
