@@ -129,6 +129,25 @@ abbrev_model() {
   fi
 }
 
+# effort_suffix <level> -> slash-letter appended to the model segment. The
+# escalation reads alphabetically at the tail: /l /m /h, then /x (xhigh),
+# /y (max), /z (ultracode — the /effort value beyond max; the harness may
+# only report it as xhigh, but if the string arrives it renders right).
+# A level outside the known set passes through whole (F5/ultra) rather than
+# being guessed at; no effort field means no suffix.
+effort_suffix() {
+  case "$1" in
+    '')        ;;
+    low)       printf '/l';;
+    medium)    printf '/m';;
+    high)      printf '/h';;
+    xhigh)     printf '/x';;
+    max)       printf '/y';;
+    ultracode) printf '/z';;
+    *)         printf '/%s' "$1";;
+  esac
+}
+
 label_for() {
   case "$1" in
     five_hour) printf '5h';;
@@ -138,6 +157,7 @@ label_for() {
 }
 
 model=$($JQ -r '.model.display_name // "?"' <<<"$input" 2>/dev/null)
+effort=$($JQ -r '.effort.level // ""' <<<"$input" 2>/dev/null)
 dir=$($JQ -r '.workspace.current_dir // .cwd // ""' <<<"$input" 2>/dev/null)
 ctx_used=$($JQ -r '
   .context_window as $c |
@@ -177,7 +197,7 @@ if [ -n "$dir" ]; then
   fi
   [ -n "$branch" ] && line+="$(fg "$BRNC")${branch}${X}${SEP}"
 fi
-line+="${B}${CYA}$(abbrev_model "$model")${X}"
+line+="${B}${CYA}$(abbrev_model "$model")$(effort_suffix "$effort")${X}"
 
 # --- context burn-up ---
 if [ "$ctx_used" -ge 0 ] 2>/dev/null; then

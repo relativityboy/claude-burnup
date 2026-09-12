@@ -22,13 +22,13 @@ statusline schema doesn't carry it).
 
 ## What it shows
 ```
-myproject/ | main | F5 | ctx ███░░░░░░░ 30% | 5h ██░░░░░░░░ 18% →40% ⟳ 17:33 | wk █░░░░░░░░░ 7% →13% ⟳ 3d
+myproject/ | main | F5/h | ctx ███░░░░░░░ 30% | 5h ██░░░░░░░░ 18% →40% ⟳ 17:33 | wk █░░░░░░░░░ 7% →13% ⟳ 3d
 ```
 | Segment | Meaning |
 |---|---|
 | `myproject/` | working directory (basename) |
 | `main` | git branch · a detached HEAD (rebase, bisect) shows `@shortsha` · absent outside a repo |
-| `F5` | current model, abbreviated — see below |
+| `F5/h` | current model, abbreviated, with its reasoning-effort level — see below |
 | `ctx` | context window consumed (works with 200k and 1M windows — percentages come from Claude Code itself) |
 | `5h` | 5-hour session window consumed · `→N%` projected at reset · `⟳ HH:MM` reset time |
 | `wk` | weekly (all models) consumed · projection · `⟳ 3d` time until reset |
@@ -55,6 +55,21 @@ this is the only place that shows.
 The rule is derived, not a lookup table, so a model released after this script
 still abbreviates correctly. A name with nothing version-shaped in it is passed
 through unchanged rather than guessed at.
+
+### Effort suffix
+
+When the session reports a reasoning-effort level, it rides on the model segment
+as a slash-letter — alphabetical at the tail as the effort climbs:
+
+| level | shows |
+|---|---|
+| low / medium / high | `/l` `/m` `/h` |
+| xhigh | `/x` |
+| max | `/y` |
+| ultracode | `/z` |
+
+No effort reported → no suffix. A level outside the known set renders whole
+(`F5/ultra`) rather than being guessed at.
 
 ## Color bands
 
