@@ -14,7 +14,7 @@
 #
 # Reads the JSON Claude Code passes on stdin, plus one local git query for the
 # branch (the statusline schema carries no current-branch field) — no network,
-# no credentials.
+# no credentials by default. (exception TESTING ONLY: BURNUP_FETCH_FALLBACK below.)
 # Stdin schema: https://code.claude.com/docs/en/statusline.md
 
 input=$(cat)
@@ -30,6 +30,20 @@ fi
 # BSD (macOS) vs GNU date for epoch -> clock formatting
 if date -r 0 +%s >/dev/null 2>&1; then DATE_BSD=1; else DATE_BSD=; fi
 clock() { if [ -n "$DATE_BSD" ]; then date -r "$1" +%H:%M; else date -d "@$1" +%H:%M; fi; }
+mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
+
+# TESTING ONLY
+# Testing purposes only. Pre-code for when anthripic adds data to the standard api
+#
+# To enable: export BURNUP_FETCH_FALLBACK=1 in the environment the status line
+# runs in — e.g. in ~/.claude/settings.json:
+#   "command": "BURNUP_FETCH_FALLBACK=1 ~/.claude/claude-burnup.sh"
+# (or change the default here). The token is read from ~/.claude/.credentials.json
+# or, on macOS, the "Claude Code-credentials" keychain item, and is sent only to
+# api.anthropic.com. BURNUP_USAGE_CACHE relocates the cache file (tests use it).
+FETCH_FALLBACK=${BURNUP_FETCH_FALLBACK:-0}
+USAGE_CACHE=${BURNUP_USAGE_CACHE:-$HOME/.claude/statusline-usage-cache.tsv}
+USAGE_LOCK="$USAGE_CACHE.lock"
 
 # Band colors as truecolor R;G;B triplets (computable gradients need real RGB).
 LIME="0;255;0"        # <33: pure bright green
@@ -180,6 +194,44 @@ scoped_lines=$($JQ -r '
   | @tsv' <<<"$input" 2>/dev/null)
 
 now=$(date +%s)
+
+# TESTING ONLY
+# Test code for when anthropic explicitly includes fable limits in the api. Dead code until then.
+# Only runs when the payload carries no model_scoped data, so the native field
+# wins the moment Claude Code starts sending it. The cache is the same TSV shape
+# the native path produces (label, used%, reset epoch), so one renderer serves
+# both. A lock directory keeps concurrent refreshes from stacking fetches.
+if [ -z "$scoped_lines" ] && [ "$FETCH_FALLBACK" = "1" ] && command -v curl >/dev/null; then
+  age=999999
+  [ -f "$USAGE_CACHE" ] && age=$(( now - $(mtime "$USAGE_CACHE") ))
+  if [ -d "$USAGE_LOCK" ] && [ $(( now - $(mtime "$USAGE_LOCK") )) -gt 300 ]; then
+    rmdir "$USAGE_LOCK" 2>/dev/null   # clear a lock orphaned by a crashed refresher
+  fi
+  if [ "$age" -ge 120 ] && mkdir "$USAGE_LOCK" 2>/dev/null; then
+    (
+      trap 'rmdir "$USAGE_LOCK" 2>/dev/null' EXIT
+      if [ -f ~/.claude/.credentials.json ]; then
+        tok=$($JQ -r '.claudeAiOauth.accessToken // empty' ~/.claude/.credentials.json)
+      else
+        tok=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null \
+              | $JQ -r '.claudeAiOauth.accessToken // empty')
+      fi
+      [ -n "$tok" ] || exit 0
+      # token goes in via a header file on stdin, never on the command line
+      printf 'Authorization: Bearer %s\n' "$tok" \
+        | curl -sS --max-time 5 -H @- \
+            -H "anthropic-beta: oauth-2025-04-20" -H "Content-Type: application/json" \
+            https://api.anthropic.com/api/oauth/usage 2>/dev/null \
+        | $JQ -r '
+            .limits // [] | .[] | select(.kind == "weekly_scoped" and .percent != null)
+            | [(.scope.model.display_name // "model" | ascii_downcase), (.percent | round),
+               ((.resets_at // "")[0:19] | if . == "" then 0 else (strptime("%Y-%m-%dT%H:%M:%S") | mktime) end)]
+            | @tsv' > "$USAGE_CACHE.tmp" \
+        && mv "$USAGE_CACHE.tmp" "$USAGE_CACHE" && chmod 600 "$USAGE_CACHE"
+    ) </dev/null >/dev/null 2>&1 &
+  fi
+  [ -f "$USAGE_CACHE" ] && scoped_lines=$(cat "$USAGE_CACHE")
+fi
 
 # --- directory + git branch ---
 # The branch comes from git, not stdin — the statusline JSON has no
